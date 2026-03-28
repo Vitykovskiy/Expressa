@@ -77,6 +77,15 @@ function createApp({ config = createConfigFromEnv(), store = createStore(config)
     };
   }
 
+  function withAdministrator(handler) {
+    return withActor("backoffice", (req, res, next) => {
+      if (req.actor.role !== "administrator") {
+        throw httpError(403, "Administrator role is required");
+      }
+      handler(req, res, next);
+    });
+  }
+
   app.get("/", (_req, res) => {
     res.json({ service: "expressa-backend", slice: "A" });
   });
@@ -175,6 +184,27 @@ function createApp({ config = createConfigFromEnv(), store = createStore(config)
     "/backoffice/availability/:target",
     withActor("backoffice", (req, res) => {
       res.json(store.setAvailability(req.params.target, req.body));
+    })
+  );
+
+  app.post(
+    "/admin/menu/:target",
+    withAdministrator((req, res) => {
+      res.json(store.adminMutateMenu(req.params.target, req.body));
+    })
+  );
+
+  app.post(
+    "/admin/users/:target",
+    withAdministrator((req, res) => {
+      res.json(store.adminMutateUsers(req.params.target, req.body));
+    })
+  );
+
+  app.post(
+    "/admin/settings",
+    withAdministrator((req, res) => {
+      res.json(store.adminUpdateSettings(req.body));
     })
   );
 

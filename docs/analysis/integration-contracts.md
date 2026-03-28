@@ -16,9 +16,11 @@
 | `POST /backoffice/orders/:id/ready` | Backend | Backoffice web app | Actor context | Updated order status | Persists `ready_by` audit data |
 | `POST /backoffice/orders/:id/close` | Backend | Backoffice web app | Actor context | Updated order status | Completes pickup lifecycle |
 | `POST /backoffice/availability/*` | Backend | Backoffice web app | Actor context and availability change payload | Updated availability state | Barista can modify availability but not structure or pricing |
-| `POST /admin/menu/*` | Backend | Backoffice web app | Administrator context and menu payload | Updated menu entity | Administrator-only surface for categories, products, addons, and prices |
-| `POST /admin/users/*` | Backend | Backoffice web app | Administrator context and role/block payload | Updated user record | Supports barista assignment and blocking |
-| `POST /admin/settings` | Backend | Backoffice web app | Administrator context and settings payload | Updated operating settings | Supports working-hours and slot-capacity changes |
+| `POST /admin/menu/list` | Backend | Backoffice web app | Administrator context | Full editable menu snapshot (`categories`, `products`, `sizes`, `addonGroups`, `addons`) | Read-model for administrator menu tab |
+| `POST /admin/menu/{category|product|size|addon-group|addon}` | Backend | Backoffice web app | Administrator context and target payload | Created or updated menu entity with `target`, `operation`, `entity` | Deterministic validation errors for missing/invalid fields and unknown references |
+| `POST /admin/users/list` | Backend | Backoffice web app | Administrator context | List of users with role/block state | Read-model for administrator users tab |
+| `POST /admin/users/{role|block}` | Backend | Backoffice web app | Administrator context, `telegramId`, and mutation payload | Updated user record with role or blocked state | Role mutation is limited to `customer`/`barista`; root administrator safeguards are enforced |
+| `POST /admin/settings` | Backend | Backoffice web app | Administrator context and settings payload | Current or updated operating settings | Empty payload returns current settings; updates support `workingHoursStart`, `workingHoursEnd`, and `slotCapacity` |
 
 ## Event Contracts
 

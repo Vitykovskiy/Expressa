@@ -40,6 +40,68 @@ function isNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+function parseInteger(value, fieldName) {
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return value;
+  }
+  if (typeof value === "string" && /^-?\d+$/.test(value.trim())) {
+    return Number(value.trim());
+  }
+  throw httpError(400, `${fieldName} must be an integer`);
+}
+
+function parseBoolean(value, fieldName) {
+  if (typeof value !== "boolean") {
+    throw httpError(400, `${fieldName} must be boolean`);
+  }
+  return value;
+}
+
+function parseTimeValue(value, fieldName) {
+  if (!isNonEmptyString(value)) {
+    throw httpError(400, `${fieldName} must use HH:MM format`);
+  }
+  const trimmed = value.trim();
+  const match = /^(\d{2}):(\d{2})$/.exec(trimmed);
+  if (!match) {
+    throw httpError(400, `${fieldName} must use HH:MM format`);
+  }
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    throw httpError(400, `${fieldName} must use HH:MM format`);
+  }
+  return trimmed;
+}
+
+function normalizeTelegramId(value) {
+  if (!isNonEmptyString(value) || !/^-?\d+$/.test(value.trim())) {
+    throw httpError(400, "telegramId must be a numeric string");
+  }
+  return String(Number(value.trim()));
+}
+
+function resolveEntityId(providedId, prefix, collection) {
+  if (providedId !== undefined) {
+    if (!isNonEmptyString(providedId)) {
+      throw httpError(400, "id must be a non-empty string when provided");
+    }
+    return providedId.trim();
+  }
+
+  let maxSuffix = 0;
+  const pattern = new RegExp(`^${prefix}-(\\d+)$`);
+  for (const item of collection) {
+    const match = pattern.exec(String(item.id ?? ""));
+    if (!match) {
+      continue;
+    }
+    maxSuffix = Math.max(maxSuffix, Number(match[1]));
+  }
+  return `${prefix}-${maxSuffix + 1}`;
+}
+
 function buildDefaultMenu() {
   return {
     categories: [
@@ -629,6 +691,356 @@ function createStore(config) {
     throw httpError(404, "Unsupported availability target");
   }
 
+  function asMenuSnapshot() {
+    return {
+      categories: state.menu.categories.map((category) => ({ ...category })),
+      products: state.menu.products.map((product) => ({ ...product })),
+      sizes: state.menu.sizes.map((size) => ({ ...size })),
+      addonGroups: state.menu.addonGroups.map((group) => ({ ...group })),
+      addons: state.menu.addons.map((addon) => ({ ...addon }))
+    };
+  }
+
+  function upsertMenuCategory(payload) {
+    if (!payload || typeof payload !== "object") {
+      throw httpError(400, "Request body must be a JSON object");
+    }
+    if (!isNonEmptyString(payload.name)) {
+      throw httpError(400, "name is required");
+    }
+
+    const id = resolveEntityId(payload.id, "cat", state.menu.categories);
+    const existingIndex = state.menu.categories.findIndex((item) => item.id === id);
+    const sortOrder = payload.sortOrder === undefined ? undefined : parseInteger(payload.sortOrder, "sortOrder");
+    if (sortOrder !== undefined && sortOrder < 0) {
+      throw httpError(400, "sortOrder must be greater than or equal to 0");
+    }
+
+    const isActive =
+      payload.isActive === undefined ? undefined : parseBoolean(payload.isActive, "isActive");
+
+    const existing = existingIndex >= 0 ? state.menu.categories[existingIndex] : null;
+    const entity = {
+      id,
+      name: payload.name.trim(),
+      sortOrder: sortOrder ?? existing?.sortOrder ?? 100,
+      isActive: isActive ?? existing?.isActive ?? true
+    };
+
+    if (existingIndex >= 0) {
+      state.menu.categories[existingIndex] = entity;
+      return { target: "category", operation: "updated", entity };
+    }
+
+    state.menu.categories.push(entity);
+    return { target: "category", operation: "created", entity };
+  }
+
+  function upsertMenuProduct(payload) {
+    if (!payload || typeof payload !== "object") {
+      throw httpError(400, "Request body must be a JSON object");
+    }
+    if (!isNonEmptyString(payload.name)) {
+      throw httpError(400, "name is required");
+    }
+    if (!isNonEmptyString(payload.categoryId)) {
+      throw httpError(400, "categoryId is required");
+    }
+
+    const categoryExists = state.menu.categories.some((item) => item.id === payload.categoryId);
+    if (!categoryExists) {
+      throw httpError(400, "categoryId references an unknown category");
+    }
+
+    const baseState = payload.baseState ?? "active";
+    if (baseState !== "active" && baseState !== "inactive") {
+      throw httpError(400, "baseState must be active or inactive");
+    }
+
+    const id = resolveEntityId(payload.id, "prod", state.menu.products);
+    const existingIndex = state.menu.products.findIndex((item) => item.id === id);
+    const existing = existingIndex >= 0 ? state.menu.products[existingIndex] : null;
+
+    const entity = {
+      id,
+      categoryId: payload.categoryId,
+      name: payload.name.trim(),
+      description:
+        payload.description === undefined
+          ? existing?.description ?? ""
+          : String(payload.description),
+      baseState,
+      isTemporarilyAvailable:
+        payload.isTemporarilyAvailable === undefined
+          ? existing?.isTemporarilyAvailable ?? true
+          : parseBoolean(payload.isTemporarilyAvailable, "isTemporarilyAvailable")
+    };
+
+    if (existingIndex >= 0) {
+      state.menu.products[existingIndex] = entity;
+      return { target: "product", operation: "updated", entity };
+    }
+
+    state.menu.products.push(entity);
+    return { target: "product", operation: "created", entity };
+  }
+
+  function upsertMenuSize(payload) {
+    if (!payload || typeof payload !== "object") {
+      throw httpError(400, "Request body must be a JSON object");
+    }
+    if (!isNonEmptyString(payload.productId)) {
+      throw httpError(400, "productId is required");
+    }
+    if (!isNonEmptyString(payload.sizeCode)) {
+      throw httpError(400, "sizeCode is required");
+    }
+
+    const productExists = state.menu.products.some((item) => item.id === payload.productId);
+    if (!productExists) {
+      throw httpError(400, "productId references an unknown product");
+    }
+
+    const sizeCode = payload.sizeCode.trim().toUpperCase();
+    if (!["S", "M", "L"].includes(sizeCode)) {
+      throw httpError(400, "sizeCode must be one of S, M, L");
+    }
+
+    const priceRub = parseInteger(payload.priceRub, "priceRub");
+    if (priceRub < 0) {
+      throw httpError(400, "priceRub must be greater than or equal to 0");
+    }
+
+    const id = resolveEntityId(payload.id, "size", state.menu.sizes);
+    const existingIndex = state.menu.sizes.findIndex((item) => item.id === id);
+    const entity = {
+      id,
+      productId: payload.productId,
+      sizeCode,
+      priceRub
+    };
+
+    if (existingIndex >= 0) {
+      state.menu.sizes[existingIndex] = entity;
+      return { target: "size", operation: "updated", entity };
+    }
+
+    state.menu.sizes.push(entity);
+    return { target: "size", operation: "created", entity };
+  }
+
+  function upsertMenuAddonGroup(payload) {
+    if (!payload || typeof payload !== "object") {
+      throw httpError(400, "Request body must be a JSON object");
+    }
+    if (payload.ownerType !== "product") {
+      throw httpError(400, "ownerType must be product");
+    }
+    if (!isNonEmptyString(payload.ownerId)) {
+      throw httpError(400, "ownerId is required");
+    }
+    if (!isNonEmptyString(payload.name)) {
+      throw httpError(400, "name is required");
+    }
+    if (!["single", "multi"].includes(payload.selectionRule)) {
+      throw httpError(400, "selectionRule must be single or multi");
+    }
+
+    const productExists = state.menu.products.some((item) => item.id === payload.ownerId);
+    if (!productExists) {
+      throw httpError(400, "ownerId references an unknown product");
+    }
+
+    const minCount = parseInteger(payload.minCount, "minCount");
+    const maxCount = parseInteger(payload.maxCount, "maxCount");
+    if (minCount < 0 || maxCount < 0 || maxCount < minCount) {
+      throw httpError(400, "minCount and maxCount must satisfy 0 <= minCount <= maxCount");
+    }
+
+    const id = resolveEntityId(payload.id, "group", state.menu.addonGroups);
+    const existingIndex = state.menu.addonGroups.findIndex((item) => item.id === id);
+    const entity = {
+      id,
+      ownerType: "product",
+      ownerId: payload.ownerId,
+      name: payload.name.trim(),
+      selectionRule: payload.selectionRule,
+      minCount,
+      maxCount
+    };
+
+    if (existingIndex >= 0) {
+      state.menu.addonGroups[existingIndex] = entity;
+      return { target: "addon-group", operation: "updated", entity };
+    }
+
+    state.menu.addonGroups.push(entity);
+    return { target: "addon-group", operation: "created", entity };
+  }
+
+  function upsertMenuAddon(payload) {
+    if (!payload || typeof payload !== "object") {
+      throw httpError(400, "Request body must be a JSON object");
+    }
+    if (!isNonEmptyString(payload.addonGroupId)) {
+      throw httpError(400, "addonGroupId is required");
+    }
+    if (!isNonEmptyString(payload.name)) {
+      throw httpError(400, "name is required");
+    }
+
+    const groupExists = state.menu.addonGroups.some((item) => item.id === payload.addonGroupId);
+    if (!groupExists) {
+      throw httpError(400, "addonGroupId references an unknown addon group");
+    }
+
+    const priceRub = parseInteger(payload.priceRub, "priceRub");
+    if (priceRub < 0) {
+      throw httpError(400, "priceRub must be greater than or equal to 0");
+    }
+
+    const id = resolveEntityId(payload.id, "addon", state.menu.addons);
+    const existingIndex = state.menu.addons.findIndex((item) => item.id === id);
+    const existing = existingIndex >= 0 ? state.menu.addons[existingIndex] : null;
+    const entity = {
+      id,
+      addonGroupId: payload.addonGroupId,
+      name: payload.name.trim(),
+      priceRub,
+      isTemporarilyAvailable:
+        payload.isTemporarilyAvailable === undefined
+          ? existing?.isTemporarilyAvailable ?? true
+          : parseBoolean(payload.isTemporarilyAvailable, "isTemporarilyAvailable")
+    };
+
+    if (existingIndex >= 0) {
+      state.menu.addons[existingIndex] = entity;
+      return { target: "addon", operation: "updated", entity };
+    }
+
+    state.menu.addons.push(entity);
+    return { target: "addon", operation: "created", entity };
+  }
+
+  function adminMutateMenu(target, payload) {
+    if (target === "list") {
+      return { target: "list", menu: asMenuSnapshot() };
+    }
+
+    if (target === "category") {
+      return upsertMenuCategory(payload);
+    }
+    if (target === "product") {
+      return upsertMenuProduct(payload);
+    }
+    if (target === "size") {
+      return upsertMenuSize(payload);
+    }
+    if (target === "addon-group") {
+      return upsertMenuAddonGroup(payload);
+    }
+    if (target === "addon") {
+      return upsertMenuAddon(payload);
+    }
+
+    throw httpError(404, "Unsupported menu target");
+  }
+
+  function toAdminUserView(user) {
+    return {
+      id: user.id,
+      telegramId: user.telegramId,
+      role: user.role,
+      isBlocked: user.isBlocked,
+      profileName: user.profileName
+    };
+  }
+
+  function adminMutateUsers(target, payload) {
+    if (target === "list") {
+      return { target: "list", users: state.users.map((user) => toAdminUserView(user)) };
+    }
+    if (!payload || typeof payload !== "object") {
+      throw httpError(400, "Request body must be a JSON object");
+    }
+
+    const telegramId = normalizeTelegramId(payload.telegramId);
+    const user = getUserByTelegramId(telegramId);
+    if (!user) {
+      throw httpError(404, "User not found");
+    }
+
+    if (target === "role") {
+      if (!isNonEmptyString(payload.role)) {
+        throw httpError(400, "role is required");
+      }
+      const role = payload.role.trim();
+      if (!["customer", "barista"].includes(role)) {
+        throw httpError(400, "role must be customer or barista");
+      }
+      if (user.telegramId === adminTelegramId) {
+        throw httpError(400, "Root administrator role cannot be changed");
+      }
+      user.role = role;
+      return { target: "role", user: toAdminUserView(user) };
+    }
+
+    if (target === "block") {
+      const isBlocked = parseBoolean(payload.isBlocked, "isBlocked");
+      if (user.telegramId === adminTelegramId && isBlocked) {
+        throw httpError(400, "Root administrator cannot be blocked");
+      }
+      user.isBlocked = isBlocked;
+      return { target: "block", user: toAdminUserView(user) };
+    }
+
+    throw httpError(404, "Unsupported users target");
+  }
+
+  function adminUpdateSettings(payload) {
+    if (payload === undefined || payload === null) {
+      return { settings: { ...state.settings } };
+    }
+    if (typeof payload !== "object") {
+      throw httpError(400, "Request body must be a JSON object");
+    }
+
+    const allowedKeys = new Set(["workingHoursStart", "workingHoursEnd", "slotCapacity"]);
+    const payloadKeys = Object.keys(payload);
+    for (const key of payloadKeys) {
+      if (!allowedKeys.has(key)) {
+        throw httpError(400, `Unsupported settings field: ${key}`);
+      }
+    }
+    if (payloadKeys.length === 0) {
+      return { settings: { ...state.settings } };
+    }
+
+    const nextSettings = { ...state.settings };
+    if (payload.workingHoursStart !== undefined) {
+      nextSettings.workingHoursStart = parseTimeValue(payload.workingHoursStart, "workingHoursStart");
+    }
+    if (payload.workingHoursEnd !== undefined) {
+      nextSettings.workingHoursEnd = parseTimeValue(payload.workingHoursEnd, "workingHoursEnd");
+    }
+    if (payload.slotCapacity !== undefined) {
+      const slotCapacity = parseInteger(payload.slotCapacity, "slotCapacity");
+      if (slotCapacity <= 0) {
+        throw httpError(400, "slotCapacity must be greater than 0");
+      }
+      nextSettings.slotCapacity = slotCapacity;
+    }
+
+    const startMinutes = timeStringToMinutes(nextSettings.workingHoursStart);
+    const endMinutes = timeStringToMinutes(nextSettings.workingHoursEnd);
+    if (startMinutes >= endMinutes) {
+      throw httpError(400, "workingHoursStart must be earlier than workingHoursEnd");
+    }
+
+    state.settings = nextSettings;
+    return { settings: { ...state.settings } };
+  }
+
   function isBackofficeRole(role) {
     return BACKOFFICE_ROLES.has(role);
   }
@@ -648,7 +1060,10 @@ function createStore(config) {
     listCustomerOrders,
     listBackofficeOrders,
     transitionOrder,
-    setAvailability
+    setAvailability,
+    adminMutateMenu,
+    adminMutateUsers,
+    adminUpdateSettings
   };
 }
 

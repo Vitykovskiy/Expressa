@@ -258,3 +258,116 @@ test("blocked users and role checks are enforced", async () => {
     await harness.close();
   }
 });
+
+test("administrator contracts for menu, users, and settings are enforced and validated", async () => {
+  const harness = await createHarness();
+  try {
+    const baristaSettingsAttempt = await harness.request({
+      method: "POST",
+      path: "/admin/settings",
+      telegramId: 2001,
+      body: { slotCapacity: 8 }
+    });
+    assert.equal(baristaSettingsAttempt.status, 403);
+    assert.equal(baristaSettingsAttempt.json.error, "Administrator role is required");
+
+    const settingsRead = await harness.request({
+      method: "POST",
+      path: "/admin/settings",
+      telegramId: 1,
+      body: {}
+    });
+    assert.equal(settingsRead.status, 200);
+    assert.equal(settingsRead.json.settings.slotCapacity, 5);
+
+    const invalidSettings = await harness.request({
+      method: "POST",
+      path: "/admin/settings",
+      telegramId: 1,
+      body: { workingHoursStart: "21:00", workingHoursEnd: "08:00" }
+    });
+    assert.equal(invalidSettings.status, 400);
+    assert.equal(
+      invalidSettings.json.error,
+      "workingHoursStart must be earlier than workingHoursEnd"
+    );
+
+    const settingsUpdate = await harness.request({
+      method: "POST",
+      path: "/admin/settings",
+      telegramId: 1,
+      body: { workingHoursStart: "08:30", workingHoursEnd: "21:30", slotCapacity: 7 }
+    });
+    assert.equal(settingsUpdate.status, 200);
+    assert.equal(settingsUpdate.json.settings.workingHoursStart, "08:30");
+    assert.equal(settingsUpdate.json.settings.slotCapacity, 7);
+
+    const menuList = await harness.request({
+      method: "POST",
+      path: "/admin/menu/list",
+      telegramId: 1,
+      body: {}
+    });
+    assert.equal(menuList.status, 200);
+    assert.equal(menuList.json.menu.categories.length >= 1, true);
+
+    const createCategory = await harness.request({
+      method: "POST",
+      path: "/admin/menu/category",
+      telegramId: 1,
+      body: {
+        name: "Tea",
+        sortOrder: 30,
+        isActive: true
+      }
+    });
+    assert.equal(createCategory.status, 200);
+    assert.equal(createCategory.json.target, "category");
+    assert.equal(createCategory.json.operation, "created");
+    assert.equal(createCategory.json.entity.name, "Tea");
+
+    const usersList = await harness.request({
+      method: "POST",
+      path: "/admin/users/list",
+      telegramId: 1,
+      body: {}
+    });
+    assert.equal(usersList.status, 200);
+    assert.equal(usersList.json.users.some((user) => user.telegramId === "3001"), true);
+
+    const promoteCustomer = await harness.request({
+      method: "POST",
+      path: "/admin/users/role",
+      telegramId: 1,
+      body: { telegramId: "3001", role: "barista" }
+    });
+    assert.equal(promoteCustomer.status, 200);
+    assert.equal(promoteCustomer.json.user.role, "barista");
+
+    const blockPromotedUser = await harness.request({
+      method: "POST",
+      path: "/admin/users/block",
+      telegramId: 1,
+      body: { telegramId: "3001", isBlocked: true }
+    });
+    assert.equal(blockPromotedUser.status, 200);
+    assert.equal(blockPromotedUser.json.user.isBlocked, true);
+
+    const blockedBackofficeAccess = await harness.request({
+      path: "/backoffice/orders",
+      telegramId: 3001
+    });
+    assert.equal(blockedBackofficeAccess.status, 403);
+
+    const blockRootAdmin = await harness.request({
+      method: "POST",
+      path: "/admin/users/block",
+      telegramId: 1,
+      body: { telegramId: "1", isBlocked: true }
+    });
+    assert.equal(blockRootAdmin.status, 400);
+    assert.equal(blockRootAdmin.json.error, "Root administrator cannot be blocked");
+  } finally {
+    await harness.close();
+  }
+});
