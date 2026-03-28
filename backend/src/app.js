@@ -113,6 +113,13 @@ function createApp({ config = createConfigFromEnv(), store = createStore(config)
     })
   );
 
+  app.post(
+    "/customer/cart/items/:id/quantity",
+    withActor("customer", (req, res) => {
+      res.json(store.mutateCartItemQuantity(req.actor.id, req.params.id, req.body));
+    })
+  );
+
   app.get(
     "/customer/cart",
     withActor("customer", (req, res) => {

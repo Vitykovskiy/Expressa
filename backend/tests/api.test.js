@@ -118,6 +118,90 @@ test("customer menu to order flow and history endpoint work", async () => {
   }
 });
 
+test("customer cart quantity mutation increments, decrements, and removes a line", async () => {
+  const harness = await createHarness();
+  try {
+    const menuResponse = await harness.request({
+      path: "/customer/menu",
+      telegramId: 3001
+    });
+    assert.equal(menuResponse.status, 200);
+
+    const addItemResponse = await harness.request({
+      method: "POST",
+      path: "/customer/cart/items",
+      telegramId: 3001,
+      body: pickCartPayload(menuResponse.json)
+    });
+    assert.equal(addItemResponse.status, 201);
+    assert.equal(addItemResponse.json.items.length, 1);
+    assert.equal(addItemResponse.json.items[0].quantity, 1);
+    assert.equal(typeof addItemResponse.json.items[0].cartItemId, "number");
+
+    const cartItemId = addItemResponse.json.items[0].cartItemId;
+    const initialLineTotal = addItemResponse.json.items[0].lineTotalRub;
+
+    const incrementResponse = await harness.request({
+      method: "POST",
+      path: `/customer/cart/items/${cartItemId}/quantity`,
+      telegramId: 3001,
+      body: { delta: 1 }
+    });
+    assert.equal(incrementResponse.status, 200);
+    assert.equal(incrementResponse.json.items[0].quantity, 2);
+    assert.equal(incrementResponse.json.items[0].lineTotalRub, initialLineTotal * 2);
+    assert.equal(incrementResponse.json.totalRub, initialLineTotal * 2);
+
+    const invalidDeltaResponse = await harness.request({
+      method: "POST",
+      path: `/customer/cart/items/${cartItemId}/quantity`,
+      telegramId: 3001,
+      body: { delta: 2 }
+    });
+    assert.equal(invalidDeltaResponse.status, 400);
+    assert.equal(invalidDeltaResponse.json.error, "delta must be 1 or -1");
+
+    const decrementToOneResponse = await harness.request({
+      method: "POST",
+      path: `/customer/cart/items/${cartItemId}/quantity`,
+      telegramId: 3001,
+      body: { delta: -1 }
+    });
+    assert.equal(decrementToOneResponse.status, 200);
+    assert.equal(decrementToOneResponse.json.items[0].quantity, 1);
+    assert.equal(decrementToOneResponse.json.items[0].lineTotalRub, initialLineTotal);
+
+    const decrementToZeroResponse = await harness.request({
+      method: "POST",
+      path: `/customer/cart/items/${cartItemId}/quantity`,
+      telegramId: 3001,
+      body: { delta: -1 }
+    });
+    assert.equal(decrementToZeroResponse.status, 200);
+    assert.equal(decrementToZeroResponse.json.items.length, 0);
+    assert.equal(decrementToZeroResponse.json.totalRub, 0);
+
+    const unknownLineResponse = await harness.request({
+      method: "POST",
+      path: `/customer/cart/items/${cartItemId}/quantity`,
+      telegramId: 3001,
+      body: { delta: 1 }
+    });
+    assert.equal(unknownLineResponse.status, 404);
+    assert.equal(unknownLineResponse.json.error, "Cart item not found");
+
+    const invalidLineIdResponse = await harness.request({
+      method: "POST",
+      path: "/customer/cart/items/invalid/quantity",
+      telegramId: 3001,
+      body: { delta: 1 }
+    });
+    assert.equal(invalidLineIdResponse.status, 400);
+  } finally {
+    await harness.close();
+  }
+});
+
 test("rejection requires explicit reason", async () => {
   const harness = await createHarness();
   try {

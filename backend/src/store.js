@@ -82,6 +82,26 @@ function normalizeTelegramId(value) {
   return String(Number(value.trim()));
 }
 
+function parseCartItemId(value) {
+  const parsed = parseInteger(value, "cartItemId");
+  if (parsed <= 0) {
+    throw httpError(400, "cartItemId must be a positive integer");
+  }
+  return parsed;
+}
+
+function parseCartDelta(value) {
+  const parsed = parseInteger(value, "delta");
+  if (parsed !== 1 && parsed !== -1) {
+    throw httpError(400, "delta must be 1 or -1");
+  }
+  return parsed;
+}
+
+function getCartItemUnitTotalRub(item) {
+  return item.unitPriceRub + item.addons.reduce((sum, addon) => sum + addon.priceRub, 0);
+}
+
 function resolveEntityId(providedId, prefix, collection) {
   if (providedId !== undefined) {
     if (!isNonEmptyString(providedId)) {
@@ -426,13 +446,16 @@ function createStore(config) {
     }));
     const lineTotalRub = size.priceRub + addons.reduce((sum, addon) => sum + addon.priceRub, 0);
 
+    const cartItemId = state.nextCartItemId++;
     return {
-      id: state.nextCartItemId++,
+      id: cartItemId,
+      cartItemId,
       productId: product.id,
       productName: product.name,
       selectedSize: size.sizeCode,
       unitPriceRub: size.priceRub,
       addons,
+      quantity: 1,
       lineTotalRub
     };
   }
@@ -441,6 +464,34 @@ function createStore(config) {
     const cart = getCart(userId);
     const item = validateAndResolveCartItem(payload);
     cart.items.push(item);
+    cart.updatedAt = new Date().toISOString();
+    return formatCart(cart);
+  }
+
+  function mutateCartItemQuantity(userId, cartItemIdValue, payload) {
+    if (!payload || typeof payload !== "object") {
+      throw httpError(400, "Request body must be a JSON object");
+    }
+
+    const cartItemId = parseCartItemId(cartItemIdValue);
+    const delta = parseCartDelta(payload.delta);
+    const cart = getCart(userId);
+    const itemIndex = cart.items.findIndex((item) => item.cartItemId === cartItemId);
+    if (itemIndex < 0) {
+      throw httpError(404, "Cart item not found");
+    }
+
+    const targetItem = cart.items[itemIndex];
+    const currentQuantity = targetItem.quantity ?? 1;
+    const nextQuantity = currentQuantity + delta;
+    if (nextQuantity <= 0) {
+      cart.items.splice(itemIndex, 1);
+      cart.updatedAt = new Date().toISOString();
+      return formatCart(cart);
+    }
+
+    targetItem.quantity = nextQuantity;
+    targetItem.lineTotalRub = getCartItemUnitTotalRub(targetItem) * nextQuantity;
     cart.updatedAt = new Date().toISOString();
     return formatCart(cart);
   }
@@ -1052,6 +1103,7 @@ function createStore(config) {
     isBackofficeRole,
     listMenu,
     addCartItem,
+    mutateCartItemQuantity,
     getCartByUserId(userId) {
       return formatCart(getCart(userId));
     },
