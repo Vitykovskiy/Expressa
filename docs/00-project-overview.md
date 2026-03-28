@@ -31,9 +31,9 @@ See `AGENTS.md` for routing and `docs/07-workflow.md` for the canonical workflow
 - Workflow state file: `.ai-dev-template.workflow-state.json`
 - Current mode: `issue_driven`
 - Active initiative: `#1 [Initiative] Стартовая delivery-цепочка и baseline-спецификация Expressa`
-- Active issue signal: `#2 [System Analysis] Baseline analysis package для Expressa`
+- Active issue signal: `#11 [Block Delivery] Slice B frontend customer/backoffice integration`
 - Current owner role: `system-analyst`
-- Delivery status: `Setup complete; GitHub workflow backbone validated; initial system_analysis task is active`
+- Delivery status: `Slice A complete; frontend frame mapping in #10 is complete; slice-B delivery chain #11-#18 is published`
 
 ## Canonical Artifact Map
 

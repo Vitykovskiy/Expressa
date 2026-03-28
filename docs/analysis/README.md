@@ -8,7 +8,7 @@ Implementation, deploy, and e2e tasks work from these artifacts as their canonic
 
 - Source issue: `#2`
 - Slice: `Slice A - Infrastructure and backend foundation for customer ordering and backoffice operations`
-- Explicitly deferred: frontend decomposition pending direct Figma frame links per screen
+- Follow-up analysis issue: `#10` resolved frontend frame mapping and decomposition for Slice B
 
 ## Required Files
 

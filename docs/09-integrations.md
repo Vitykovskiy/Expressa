@@ -18,7 +18,7 @@
 - Required task metadata captured by forms: `yes`
 - Active-session label `session: active` verified: `yes`
 - Labels prepared for workflow use: `yes`
-- Notes: Seeded backlog issues are `#1 https://github.com/Vitykovskiy/expressa/issues/1` and `#2 https://github.com/Vitykovskiy/expressa/issues/2`; downstream chain is tracked through `#3-#10`.
+- Notes: Seeded backlog issues are `#1 https://github.com/Vitykovskiy/expressa/issues/1` and `#2 https://github.com/Vitykovskiy/expressa/issues/2`; downstream chain is tracked through `#3-#18`.
 
 ## Effective Workflow Policy
 
@@ -75,7 +75,7 @@ Document every external system that matters to development, deploy, or e2e valid
 
 | Integration | Purpose | Stage first needed | Status | Notes |
 | --- | --- | --- | --- | --- |
-| GitHub Issues | Workflow task tracking and active-session routing | `setup` | Configured | Seeded issues `#1` and `#2` plus downstream chain `#3-#10` are present |
+| GitHub Issues | Workflow task tracking and active-session routing | `setup` | Configured | Seeded issues `#1` and `#2` plus downstream chain `#3-#18` are present |
 | GitHub Project | Delivery status board and required workflow fields | `setup` | Configured | Project `expressa` linked to repository with validated custom fields and statuses |
 | Telegram customer bot | Launches customer web app and sends customer order-status notifications | `implementation` | Planned | Direct URL access outside Telegram is not supported in v1 |
 | Telegram backoffice bot | Launches backoffice web app and sends barista reminders and notifications | `implementation` | Planned | Separate bot from customer-facing access path |

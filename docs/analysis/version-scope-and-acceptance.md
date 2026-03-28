@@ -58,8 +58,6 @@ Issue `#2` closes only the first delivery slice:
 
 ## Deferred To Follow-Up Analysis
 
-- Exact per-screen Figma frame links for all customer and backoffice screens.
-- Frontend implementation decomposition tied to those frame links.
 - Reminder cadence and escalation policy for `order.awaiting_action`.
 
 ## Release Gate

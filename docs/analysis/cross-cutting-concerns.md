@@ -28,5 +28,5 @@
 
 ## Slice A Guardrails
 
-- No frontend implementation issue is allowed in slice A because `figma_frame` links are not yet specified.
+- Slice A remains backend/infrastructure-oriented; frontend delivery is decomposed as separate slice B tasks from system_analysis `#10`.
 - Backend and devops tasks in slice A must not assume unapproved UI behavior beyond contracts already fixed in `integration-contracts.md`.
