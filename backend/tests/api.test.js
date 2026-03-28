@@ -1,0 +1,260 @@
+const assert = require("node:assert/strict");
+const http = require("node:http");
+const { test } = require("node:test");
+const { createApp } = require("../src/app");
+const { createStore, STATUSES } = require("../src/store");
+
+const TEST_CONFIG = {
+  adminTelegramId: "1",
+  disableTgAuth: true,
+  defaultBaristaTelegramId: "2001",
+  defaultCustomerTelegramId: "3001"
+};
+
+async function createHarness() {
+  const store = createStore(TEST_CONFIG);
+  const app = createApp({ config: TEST_CONFIG, store });
+  const server = http.createServer(app);
+
+  await new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", resolve);
+  });
+
+  const address = server.address();
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+
+  async function request({ method = "GET", path, body, telegramId }) {
+    const headers = {};
+    if (telegramId !== undefined) {
+      headers["x-telegram-id"] = String(telegramId);
+    }
+    if (body !== undefined) {
+      headers["content-type"] = "application/json";
+    }
+
+    const response = await fetch(`${baseUrl}${path}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body)
+    });
+    const json = await response.json();
+    return { status: response.status, json };
+  }
+
+  async function close() {
+    await new Promise((resolve) => server.close(resolve));
+  }
+
+  return { store, request, close };
+}
+
+function pickCartPayload(menuJson) {
+  const product = menuJson.categories[0].products[0];
+  const selectedAddons = [];
+  for (const group of product.addonGroups) {
+    if (group.minCount > 0 && group.addons.length > 0) {
+      selectedAddons.push(group.addons[0].id);
+    }
+  }
+  return {
+    productId: product.id,
+    selectedSize: product.sizes[0].sizeCode,
+    selectedAddons
+  };
+}
+
+async function createOrderFlow(harness, customerTelegramId, slotStart) {
+  const menuResponse = await harness.request({
+    path: "/customer/menu",
+    telegramId: customerTelegramId
+  });
+  assert.equal(menuResponse.status, 200);
+
+  const cartPayload = pickCartPayload(menuResponse.json);
+  const addItemResponse = await harness.request({
+    method: "POST",
+    path: "/customer/cart/items",
+    telegramId: customerTelegramId,
+    body: cartPayload
+  });
+  assert.equal(addItemResponse.status, 201);
+
+  let selectedSlotStart = slotStart;
+  if (!selectedSlotStart) {
+    const slotsResponse = await harness.request({
+      path: "/customer/slots",
+      telegramId: customerTelegramId
+    });
+    assert.equal(slotsResponse.status, 200);
+    const firstSelectableSlot = slotsResponse.json.slots.find((slot) => slot.selectable);
+    selectedSlotStart = firstSelectableSlot.start;
+  }
+
+  const orderResponse = await harness.request({
+    method: "POST",
+    path: "/customer/orders",
+    telegramId: customerTelegramId,
+    body: { slotStart: selectedSlotStart }
+  });
+  assert.equal(orderResponse.status, 201);
+  return orderResponse.json;
+}
+
+test("customer menu to order flow and history endpoint work", async () => {
+  const harness = await createHarness();
+  try {
+    const order = await createOrderFlow(harness, 3001);
+    assert.equal(order.status, STATUSES.CREATED);
+
+    const historyResponse = await harness.request({
+      path: "/customer/orders",
+      telegramId: 3001
+    });
+    assert.equal(historyResponse.status, 200);
+    assert.equal(historyResponse.json.orders.length, 1);
+    assert.equal(historyResponse.json.orders[0].id, order.id);
+  } finally {
+    await harness.close();
+  }
+});
+
+test("rejection requires explicit reason", async () => {
+  const harness = await createHarness();
+  try {
+    const order = await createOrderFlow(harness, 3001);
+
+    const rejectWithoutReason = await harness.request({
+      method: "POST",
+      path: `/backoffice/orders/${order.id}/reject`,
+      telegramId: 2001,
+      body: {}
+    });
+    assert.equal(rejectWithoutReason.status, 400);
+
+    const rejectWithReason = await harness.request({
+      method: "POST",
+      path: `/backoffice/orders/${order.id}/reject`,
+      telegramId: 2001,
+      body: { reason: "Machine maintenance" }
+    });
+    assert.equal(rejectWithReason.status, 200);
+    assert.equal(rejectWithReason.json.status, STATUSES.REJECTED);
+    assert.equal(rejectWithReason.json.rejectionReason, "Machine maintenance");
+  } finally {
+    await harness.close();
+  }
+});
+
+test("status transitions and audit fields are persisted", async () => {
+  const harness = await createHarness();
+  try {
+    const order = await createOrderFlow(harness, 3001);
+
+    const confirmResponse = await harness.request({
+      method: "POST",
+      path: `/backoffice/orders/${order.id}/confirm`,
+      telegramId: 2001
+    });
+    assert.equal(confirmResponse.status, 200);
+    assert.equal(confirmResponse.json.status, STATUSES.CONFIRMED);
+    assert.equal(confirmResponse.json.audit.confirmedBy, "2001");
+
+    const readyResponse = await harness.request({
+      method: "POST",
+      path: `/backoffice/orders/${order.id}/ready`,
+      telegramId: 2001
+    });
+    assert.equal(readyResponse.status, 200);
+    assert.equal(readyResponse.json.status, STATUSES.READY_FOR_PICKUP);
+    assert.equal(readyResponse.json.audit.readyBy, "2001");
+
+    const closeResponse = await harness.request({
+      method: "POST",
+      path: `/backoffice/orders/${order.id}/close`,
+      telegramId: 2001
+    });
+    assert.equal(closeResponse.status, 200);
+    assert.equal(closeResponse.json.status, STATUSES.CLOSED);
+  } finally {
+    await harness.close();
+  }
+});
+
+test("slot capacity counts only active statuses", async () => {
+  const harness = await createHarness();
+  try {
+    const slotsResponse = await harness.request({
+      path: "/customer/slots",
+      telegramId: 3001
+    });
+    assert.equal(slotsResponse.status, 200);
+    const targetSlot = slotsResponse.json.slots[0].start;
+
+    for (let offset = 0; offset < 5; offset += 1) {
+      await createOrderFlow(harness, 3001 + offset, targetSlot);
+    }
+
+    const menuResponse = await harness.request({
+      path: "/customer/menu",
+      telegramId: 3999
+    });
+    const cartPayload = pickCartPayload(menuResponse.json);
+    const addCartResponse = await harness.request({
+      method: "POST",
+      path: "/customer/cart/items",
+      telegramId: 3999,
+      body: cartPayload
+    });
+    assert.equal(addCartResponse.status, 201);
+
+    const fullSlotAttempt = await harness.request({
+      method: "POST",
+      path: "/customer/orders",
+      telegramId: 3999,
+      body: { slotStart: targetSlot }
+    });
+    assert.equal(fullSlotAttempt.status, 409);
+
+    const orderList = await harness.request({
+      path: "/backoffice/orders",
+      telegramId: 2001
+    });
+    assert.equal(orderList.status, 200);
+    const createdOrderId = orderList.json.orders[0].id;
+
+    const rejectResponse = await harness.request({
+      method: "POST",
+      path: `/backoffice/orders/${createdOrderId}/reject`,
+      telegramId: 2001,
+      body: { reason: "Capacity check release" }
+    });
+    assert.equal(rejectResponse.status, 200);
+    assert.equal(rejectResponse.json.status, STATUSES.REJECTED);
+
+    const unblockedOrder = await createOrderFlow(harness, 4000, targetSlot);
+    assert.equal(unblockedOrder.status, STATUSES.CREATED);
+  } finally {
+    await harness.close();
+  }
+});
+
+test("blocked users and role checks are enforced", async () => {
+  const harness = await createHarness();
+  try {
+    harness.store.setUserBlockedByTelegramId("3001", true);
+
+    const blockedCustomerResponse = await harness.request({
+      path: "/customer/menu",
+      telegramId: 3001
+    });
+    assert.equal(blockedCustomerResponse.status, 403);
+
+    const customerBackofficeResponse = await harness.request({
+      path: "/backoffice/orders",
+      telegramId: 3002
+    });
+    assert.equal(customerBackofficeResponse.status, 403);
+  } finally {
+    await harness.close();
+  }
+});

@@ -29,8 +29,10 @@
 
 | Variable | Required | Purpose | Stage first needed | Status |
 | --- | --- | --- | --- | --- |
-| `ADMIN_TELEGRAM_ID` | Yes | Defines the single root administrator to upsert on backend startup | `implementation` | Configured in GitHub Secrets and propagated to `/opt/expressa/staging/.env` by Stage0 workflow |
+| `ADMIN_TELEGRAM_ID` | Yes | Defines the single root administrator to upsert on backend startup | `implementation` | Configured in GitHub Secrets and consumed by backend bootstrap |
 | `DISABLE_TG_AUTH` | Yes for test environment | Disables Telegram auth validation in test runs and switches backend to seeded identities | `e2e` | Configured in GitHub Secrets and propagated to `/opt/expressa/staging/.env` by Stage0 workflow |
+| `BARISTA_TELEGRAM_ID` | Optional | Defines seeded barista identity for test mode | `implementation` | Optional for backend; defaults to `2001` when unset |
+| `CUSTOMER_TELEGRAM_ID` | Optional | Defines seeded customer identity for test mode | `implementation` | Optional for backend; defaults to `3001` when unset |
 | `VPS_HOST` | Yes for VPS operations | Defines the target VPS host for deployment and operational access | `infrastructure` | Configured in local `.env` and GitHub Secrets |
 | `VPS_ROOT_USER` | Yes for current VPS access flow | Defines the root SSH user for VPS administrative access | `infrastructure` | Configured in local `.env` and GitHub Secrets |
 | `VPS_ROOT_PASSWORD` | Yes for current VPS access flow | Defines the root password used for VPS administrative access | `infrastructure` | Configured in local `.env` and GitHub Secrets |
@@ -83,7 +85,7 @@ Document every external system that matters to development, deploy, or e2e valid
 - GitHub repository access: `Validated`
 - GitHub Project access: `Validated`
 - Deployment environment access: `Validated by Stage0 workflow run 23677665147 and external HTTP 200 check on 2026-03-28`
-- E2E environment readiness: `Not ready; waiting for implementation #5, #6, and #7`
+- E2E environment readiness: `Not ready; waiting for implementation #7 and deploy #8`
 
 ## Stage0 Infrastructure Baseline
 
@@ -102,6 +104,13 @@ Document every external system that matters to development, deploy, or e2e valid
 - Deployment script: `infra/vps/deploy-slice-a-runtime.sh`
 - Validation entrypoints: `infra/validation/run-smoke.sh`, `infra/validation/run-e2e.sh`
 - CI runtime image for path validation: `traefik/whoami:v1.10.1` (temporary contract image before backend artifact publication)
+
+## Slice A Backend Implementation Path
+
+- Service sources: `backend/src/*`
+- Tests: `backend/tests/api.test.js`
+- Runtime image definition: `backend/Dockerfile`
+- Backend handoff contract: `docs/delivery/slice-a-backend-handoff.md`
 
 ## Setup Notes
 
