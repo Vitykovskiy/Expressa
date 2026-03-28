@@ -1,16 +1,18 @@
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 
+const proxyTarget = process.env.VITE_API_BASE_URL || "http://127.0.0.1";
+
 export default defineConfig({
   plugins: [vue()],
   server: {
     host: "127.0.0.1",
     port: 4173,
     proxy: {
-      "/customer": "http://127.0.0.1",
-      "/backoffice": "http://127.0.0.1",
-      "/admin": "http://127.0.0.1",
-      "/healthz": "http://127.0.0.1"
+      "/customer": proxyTarget,
+      "/backoffice": proxyTarget,
+      "/admin": proxyTarget,
+      "/healthz": proxyTarget
     }
   },
   build: {

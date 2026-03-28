@@ -6,6 +6,12 @@ const statusLabels = {
   Closed: "Выдан"
 };
 
+const roleLabels = {
+  administrator: "Администратор",
+  barista: "Бариста",
+  customer: "Клиент"
+};
+
 export function formatRub(value) {
   return `${value} ₽`;
 }
@@ -41,6 +47,41 @@ export function formatSlot(slot) {
 
 export function formatOrderStatus(status) {
   return statusLabels[status] ?? status;
+}
+
+export function formatRole(role) {
+  return roleLabels[role] ?? role;
+}
+
+export function formatInitials(value) {
+  const parts = String(value ?? "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2);
+  if (parts.length === 0) {
+    return "EX";
+  }
+  return parts
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+export function formatUserSubtitle(user) {
+  if (user.telegramId) {
+    return `Telegram ${user.telegramId}`;
+  }
+  return "Без Telegram ID";
+}
+
+export function formatCategoryCount(count) {
+  if (count === 1) {
+    return "1 товар";
+  }
+  if (count >= 2 && count <= 4) {
+    return `${count} товара`;
+  }
+  return `${count} товаров`;
 }
 
 export function formatOrderMeta(order) {
