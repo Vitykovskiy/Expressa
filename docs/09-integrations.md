@@ -33,6 +33,7 @@
 | `DISABLE_TG_AUTH` | Yes for test environment | Disables Telegram auth validation in test runs and switches backend to seeded identities | `e2e` | Configured in GitHub Secrets and propagated to `/opt/expressa/staging/.env` by Stage0 workflow |
 | `BARISTA_TELEGRAM_ID` | Optional | Defines seeded barista identity for test mode | `implementation` | Optional for backend; defaults to `2001` when unset |
 | `CUSTOMER_TELEGRAM_ID` | Optional | Defines seeded customer identity for test mode | `implementation` | Optional for backend; defaults to `3001` when unset |
+| `POSTGRES_PASSWORD` | Yes for Slice A runtime deploy | Sets database password for the staging PostgreSQL container | `deploy` | Configured in GitHub Secrets for deploy workflow |
 | `VPS_HOST` | Yes for VPS operations | Defines the target VPS host for deployment and operational access | `infrastructure` | Configured in local `.env` and GitHub Secrets |
 | `VPS_ROOT_USER` | Yes for current VPS access flow | Defines the root SSH user for VPS administrative access | `infrastructure` | Configured in local `.env` and GitHub Secrets |
 | `VPS_ROOT_PASSWORD` | Yes for current VPS access flow | Defines the root password used for VPS administrative access | `infrastructure` | Configured in local `.env` and GitHub Secrets |
@@ -47,6 +48,7 @@
 | `VPS_ROOT_PASSWORD` | Local `.env` and GitHub Actions Secrets | Administrative VPS access for infrastructure automation | `infrastructure` | Set in GitHub Secrets on 2026-03-28; do not commit the value |
 | `ADMIN_TELEGRAM_ID` | GitHub Actions Secrets | Runtime env value required for backend bootstrap | `implementation` | Stage0 baseline value set on 2026-03-28 |
 | `DISABLE_TG_AUTH` | GitHub Actions Secrets | Test-env auth bypass flag used in staged env bootstrap | `e2e` | Set on 2026-03-28 |
+| `POSTGRES_PASSWORD` | GitHub Actions Secrets | Runtime DB password for Slice A deploy workflow | `deploy` | Set on 2026-03-28 |
 
 ## GitHub Token Scope Baseline
 
@@ -84,8 +86,8 @@ Document every external system that matters to development, deploy, or e2e valid
 
 - GitHub repository access: `Validated`
 - GitHub Project access: `Validated`
-- Deployment environment access: `Validated by Stage0 workflow run 23677665147 and external HTTP 200 check on 2026-03-28`
-- E2E environment readiness: `Partially ready; QA assets from #7 are available, waiting for deploy #8 to run integrated validation #9`
+- Deployment environment access: `Validated by Stage0 workflow and Slice A deploy workflow run 23678475499`
+- E2E environment readiness: `Ready for #9; deploy evidence and QA assets are available`
 
 ## Stage0 Infrastructure Baseline
 
@@ -119,6 +121,15 @@ Document every external system that matters to development, deploy, or e2e valid
 - QA scenario runner: `tests/e2e/slice-a-api.e2e.mjs`
 - QA fixtures: `tests/e2e/fixtures/*`
 - QA handoff contract: `docs/delivery/slice-a-qa-handoff.md`
+
+## Slice A Deploy Path
+
+- Deploy workflow: `.github/workflows/slice-a-deploy.yml`
+- Deploy evidence contract: `docs/delivery/slice-a-deploy-evidence.md`
+- Latest evidence run: `https://github.com/Vitykovskiy/expressa/actions/runs/23678475499`
+- Target endpoint verification:
+  - `http://216.57.105.133:18081/healthz` -> `200`
+  - `http://216.57.105.133:18081/customer/menu` with `x-telegram-id` -> `200`
 
 ## Setup Notes
 
