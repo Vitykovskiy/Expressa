@@ -343,6 +343,207 @@ test("blocked users and role checks are enforced", async () => {
   }
 });
 
+test("backoffice availability list is available to barista and administrator and includes unavailable entities", async () => {
+  const harness = await createHarness();
+  try {
+    const productUpdate = await harness.request({
+      method: "POST",
+      path: "/backoffice/availability/product",
+      telegramId: 2001,
+      body: {
+        productId: "prod-cappuccino",
+        isTemporarilyAvailable: false
+      }
+    });
+    assert.equal(productUpdate.status, 200);
+    assert.equal(productUpdate.json.target, "product");
+    assert.equal(productUpdate.json.id, "prod-cappuccino");
+    assert.equal(productUpdate.json.isTemporarilyAvailable, false);
+    assert.equal(typeof productUpdate.json.updatedAt, "string");
+
+    const sizeUpdate = await harness.request({
+      method: "POST",
+      path: "/backoffice/availability/size",
+      telegramId: 2001,
+      body: {
+        sizeId: "size-m",
+        isTemporarilyAvailable: false
+      }
+    });
+    assert.equal(sizeUpdate.status, 200);
+    assert.equal(sizeUpdate.json.target, "size");
+
+    const addonGroupUpdate = await harness.request({
+      method: "POST",
+      path: "/backoffice/availability/addon-group",
+      telegramId: 2001,
+      body: {
+        addonGroupId: "group-extras",
+        isTemporarilyAvailable: false
+      }
+    });
+    assert.equal(addonGroupUpdate.status, 200);
+    assert.equal(addonGroupUpdate.json.target, "addon-group");
+
+    const addonUpdate = await harness.request({
+      method: "POST",
+      path: "/backoffice/availability/addon",
+      telegramId: 2001,
+      body: {
+        addonId: "addon-syrup-vanilla",
+        isTemporarilyAvailable: false
+      }
+    });
+    assert.equal(addonUpdate.status, 200);
+    assert.equal(addonUpdate.json.target, "addon");
+
+    const listForBarista = await harness.request({
+      method: "POST",
+      path: "/backoffice/availability/list",
+      telegramId: 2001,
+      body: {}
+    });
+    assert.equal(listForBarista.status, 200);
+    assert.equal(Array.isArray(listForBarista.json.categories), true);
+    assert.equal(Array.isArray(listForBarista.json.products), true);
+    assert.equal(Array.isArray(listForBarista.json.sizes), true);
+    assert.equal(Array.isArray(listForBarista.json.addonGroups), true);
+    assert.equal(Array.isArray(listForBarista.json.addons), true);
+    assert.equal(typeof listForBarista.json.updatedAt, "string");
+
+    const listedProduct = listForBarista.json.products.find((entry) => entry.id === "prod-cappuccino");
+    assert.equal(listedProduct?.isTemporarilyAvailable, false);
+    const listedSize = listForBarista.json.sizes.find((entry) => entry.id === "size-m");
+    assert.equal(listedSize?.isTemporarilyAvailable, false);
+    const listedAddonGroup = listForBarista.json.addonGroups.find(
+      (entry) => entry.id === "group-extras"
+    );
+    assert.equal(listedAddonGroup?.isTemporarilyAvailable, false);
+    const listedAddon = listForBarista.json.addons.find((entry) => entry.id === "addon-syrup-vanilla");
+    assert.equal(listedAddon?.isTemporarilyAvailable, false);
+
+    const listForAdmin = await harness.request({
+      method: "POST",
+      path: "/backoffice/availability/list",
+      telegramId: 1,
+      body: {}
+    });
+    assert.equal(listForAdmin.status, 200);
+    assert.equal(listForAdmin.json.products.some((entry) => entry.id === "prod-cappuccino"), true);
+  } finally {
+    await harness.close();
+  }
+});
+
+test("backoffice availability endpoints return deterministic auth and validation errors", async () => {
+  const harness = await createHarness();
+  try {
+    const unauthenticatedList = await harness.request({
+      method: "POST",
+      path: "/backoffice/availability/list",
+      body: {}
+    });
+    assert.equal(unauthenticatedList.status, 401);
+    assert.equal(unauthenticatedList.json.error, "x-telegram-id header is required");
+
+    const customerList = await harness.request({
+      method: "POST",
+      path: "/backoffice/availability/list",
+      telegramId: 3001,
+      body: {}
+    });
+    assert.equal(customerList.status, 403);
+    assert.equal(
+      customerList.json.error,
+      "Backoffice access requires barista or administrator role"
+    );
+
+    const invalidListBody = await harness.request({
+      method: "POST",
+      path: "/backoffice/availability/list",
+      telegramId: 2001,
+      body: []
+    });
+    assert.equal(invalidListBody.status, 400);
+    assert.equal(invalidListBody.json.error, "Request body must be a JSON object");
+
+    const nonEmptyListBody = await harness.request({
+      method: "POST",
+      path: "/backoffice/availability/list",
+      telegramId: 2001,
+      body: { includeInactive: true }
+    });
+    assert.equal(nonEmptyListBody.status, 400);
+    assert.equal(
+      nonEmptyListBody.json.error,
+      "Request body for availability list must be an empty JSON object"
+    );
+
+    const unsupportedTarget = await harness.request({
+      method: "POST",
+      path: "/backoffice/availability/category",
+      telegramId: 2001,
+      body: { categoryId: "cat-coffee", isTemporarilyAvailable: false }
+    });
+    assert.equal(unsupportedTarget.status, 404);
+    assert.equal(unsupportedTarget.json.error, "Unsupported availability target");
+
+    const missingAvailabilityFlag = await harness.request({
+      method: "POST",
+      path: "/backoffice/availability/product",
+      telegramId: 2001,
+      body: { productId: "prod-cappuccino" }
+    });
+    assert.equal(missingAvailabilityFlag.status, 400);
+    assert.equal(missingAvailabilityFlag.json.error, "isTemporarilyAvailable is required");
+
+    const invalidAvailabilityFlag = await harness.request({
+      method: "POST",
+      path: "/backoffice/availability/product",
+      telegramId: 2001,
+      body: { productId: "prod-cappuccino", isTemporarilyAvailable: "false" }
+    });
+    assert.equal(invalidAvailabilityFlag.status, 400);
+    assert.equal(
+      invalidAvailabilityFlag.json.error,
+      "isTemporarilyAvailable must be boolean"
+    );
+
+    const unsupportedField = await harness.request({
+      method: "POST",
+      path: "/backoffice/availability/product",
+      telegramId: 2001,
+      body: {
+        productId: "prod-cappuccino",
+        isTemporarilyAvailable: false,
+        priceRub: 999
+      }
+    });
+    assert.equal(unsupportedField.status, 400);
+    assert.equal(unsupportedField.json.error, "Unsupported availability field: priceRub");
+
+    const missingSizeId = await harness.request({
+      method: "POST",
+      path: "/backoffice/availability/size",
+      telegramId: 2001,
+      body: { isTemporarilyAvailable: false }
+    });
+    assert.equal(missingSizeId.status, 400);
+    assert.equal(missingSizeId.json.error, "sizeId is required");
+
+    const unknownAddonGroup = await harness.request({
+      method: "POST",
+      path: "/backoffice/availability/addon-group",
+      telegramId: 2001,
+      body: { addonGroupId: "group-missing", isTemporarilyAvailable: false }
+    });
+    assert.equal(unknownAddonGroup.status, 404);
+    assert.equal(unknownAddonGroup.json.error, "Addon group not found");
+  } finally {
+    await harness.close();
+  }
+});
+
 test("administrator contracts for menu, users, and settings are enforced and validated", async () => {
   const harness = await createHarness();
   try {

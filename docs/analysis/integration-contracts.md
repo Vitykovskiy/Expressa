@@ -16,12 +16,41 @@
 | `POST /backoffice/orders/:id/reject` | Backend | Backoffice web app | Actor context and rejection reason | Updated order status | Persists `rejected_by` and reason |
 | `POST /backoffice/orders/:id/ready` | Backend | Backoffice web app | Actor context | Updated order status | Persists `ready_by` audit data |
 | `POST /backoffice/orders/:id/close` | Backend | Backoffice web app | Actor context | Updated order status | Completes pickup lifecycle |
-| `POST /backoffice/availability/*` | Backend | Backoffice web app | Actor context and availability change payload | Updated availability state | Barista can modify availability but not structure or pricing |
+| `POST /backoffice/availability/list` | Backend | Backoffice web app | Backoffice actor context and empty JSON body `{}` | Availability read-model with `categories`, `products`, `sizes`, `addonGroups`, `addons`, and `updatedAt`; includes currently unavailable entities | Canonical availability read source for both `barista` and `administrator` |
+| `POST /backoffice/availability/{product|size|addon-group|addon}` | Backend | Backoffice web app | Backoffice actor context and `{ targetIdField, isTemporarilyAvailable }` payload | Updated snapshot with `target`, `id`, `isTemporarilyAvailable`, and `updatedAt` | `barista` and `administrator` may mutate availability flags only; structure and pricing mutations are forbidden |
 | `POST /admin/menu/list` | Backend | Backoffice web app | Administrator context | Full editable menu snapshot (`categories`, `products`, `sizes`, `addonGroups`, `addons`) | Read-model for administrator menu tab |
 | `POST /admin/menu/{category|product|size|addon-group|addon}` | Backend | Backoffice web app | Administrator context and target payload | Created or updated menu entity with `target`, `operation`, `entity` | Deterministic validation errors for missing/invalid fields and unknown references |
 | `POST /admin/users/list` | Backend | Backoffice web app | Administrator context | List of users with role/block state | Read-model for administrator users tab |
 | `POST /admin/users/{role|block}` | Backend | Backoffice web app | Administrator context, `telegramId`, and mutation payload | Updated user record with role or blocked state | Role mutation is limited to `customer`/`barista`; root administrator safeguards are enforced |
 | `POST /admin/settings` | Backend | Backoffice web app | Administrator context and settings payload | Current or updated operating settings | Empty payload returns current settings; updates support `workingHoursStart`, `workingHoursEnd`, and `slotCapacity` |
+
+## Backoffice Availability Read-Model
+
+- Endpoint: `POST /backoffice/availability/list`
+- Allowed roles: `barista`, `administrator`
+- Denied actors: customer role (`403`), blocked users (`403`), missing `x-telegram-id` (`401`)
+- Request body: empty JSON object `{}` (non-object or non-empty payload returns `400`)
+- Response fields:
+  - `categories[]`: `{ id, name, sortOrder }`
+  - `products[]`: `{ id, categoryId, name, isTemporarilyAvailable }`
+  - `sizes[]`: `{ id, productId, name, isTemporarilyAvailable }`
+  - `addonGroups[]`: `{ id, ownerType, ownerId, name, isTemporarilyAvailable }`
+  - `addons[]`: `{ id, addonGroupId, name, isTemporarilyAvailable }`
+  - `updatedAt`: ISO timestamp for the latest menu availability update
+- Unavailable entities (`isTemporarilyAvailable=false`) must remain present in this read-model so backoffice users can re-enable them.
+
+## Backoffice Availability Mutation Rules
+
+- Supported targets: `product`, `size`, `addon-group`, `addon`
+- Required payload fields by target:
+  - `product` -> `productId`
+  - `size` -> `sizeId`
+  - `addon-group` -> `addonGroupId`
+  - `addon` -> `addonId`
+- Shared required field: `isTemporarilyAvailable` must be boolean.
+- Only the id field for the chosen target and `isTemporarilyAvailable` are accepted; other fields return deterministic `400`.
+- Unknown target returns `404` (`Unsupported availability target`).
+- Unknown entity id returns deterministic `404` by target (`Product not found`, `Size not found`, `Addon group not found`, `Addon not found`).
 
 ## Event Contracts
 

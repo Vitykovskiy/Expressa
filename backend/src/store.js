@@ -57,6 +57,10 @@ function parseBoolean(value, fieldName) {
   return value;
 }
 
+function isPlainObject(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function parseTimeValue(value, fieldName) {
   if (!isNonEmptyString(value)) {
     throw httpError(400, `${fieldName} must use HH:MM format`);
@@ -138,9 +142,27 @@ function buildDefaultMenu() {
       }
     ],
     sizes: [
-      { id: "size-s", productId: "prod-cappuccino", sizeCode: "S", priceRub: 220 },
-      { id: "size-m", productId: "prod-cappuccino", sizeCode: "M", priceRub: 260 },
-      { id: "size-l", productId: "prod-cappuccino", sizeCode: "L", priceRub: 300 }
+      {
+        id: "size-s",
+        productId: "prod-cappuccino",
+        sizeCode: "S",
+        priceRub: 220,
+        isTemporarilyAvailable: true
+      },
+      {
+        id: "size-m",
+        productId: "prod-cappuccino",
+        sizeCode: "M",
+        priceRub: 260,
+        isTemporarilyAvailable: true
+      },
+      {
+        id: "size-l",
+        productId: "prod-cappuccino",
+        sizeCode: "L",
+        priceRub: 300,
+        isTemporarilyAvailable: true
+      }
     ],
     addonGroups: [
       {
@@ -150,7 +172,8 @@ function buildDefaultMenu() {
         name: "Milk type",
         selectionRule: "single",
         minCount: 1,
-        maxCount: 1
+        maxCount: 1,
+        isTemporarilyAvailable: true
       },
       {
         id: "group-extras",
@@ -159,7 +182,8 @@ function buildDefaultMenu() {
         name: "Extras",
         selectionRule: "multi",
         minCount: 0,
-        maxCount: 2
+        maxCount: 2,
+        isTemporarilyAvailable: true
       }
     ],
     addons: [
@@ -210,6 +234,7 @@ function createStore(config) {
     },
     carts: new Map(),
     orders: [],
+    menuUpdatedAt: new Date().toISOString(),
     nextUserId: 1,
     nextCartItemId: 1,
     nextOrderId: 1
@@ -276,22 +301,26 @@ function createStore(config) {
     };
   }
 
+  function touchMenuUpdatedAt() {
+    state.menuUpdatedAt = new Date().toISOString();
+  }
+
   function listMenu() {
     const activeCategoryIds = new Set(
       state.menu.categories.filter((category) => category.isActive).map((category) => category.id)
     );
 
-    const visibleProducts = state.menu.products.filter(
+    const candidateProducts = state.menu.products.filter(
       (product) =>
         product.baseState === "active" &&
         product.isTemporarilyAvailable &&
         activeCategoryIds.has(product.categoryId)
     );
-    const visibleProductIds = new Set(visibleProducts.map((product) => product.id));
+    const candidateProductIds = new Set(candidateProducts.map((product) => product.id));
 
     const sizesByProductId = new Map();
     for (const size of state.menu.sizes) {
-      if (!visibleProductIds.has(size.productId)) {
+      if (!candidateProductIds.has(size.productId) || !size.isTemporarilyAvailable) {
         continue;
       }
       if (!sizesByProductId.has(size.productId)) {
@@ -305,7 +334,11 @@ function createStore(config) {
 
     const groupsByProductId = new Map();
     for (const group of state.menu.addonGroups) {
-      if (group.ownerType !== "product" || !visibleProductIds.has(group.ownerId)) {
+      if (
+        group.ownerType !== "product" ||
+        !candidateProductIds.has(group.ownerId) ||
+        !group.isTemporarilyAvailable
+      ) {
         continue;
       }
       if (!groupsByProductId.has(group.ownerId)) {
@@ -343,6 +376,16 @@ function createStore(config) {
       });
     }
 
+    const visibleProducts = candidateProducts.filter((product) => {
+      const hasAvailableSize = (sizesByProductId.get(product.id) ?? []).length > 0;
+      if (!hasAvailableSize) {
+        return false;
+      }
+
+      const groupModels = groupsByProductId.get(product.id) ?? [];
+      return groupModels.every((group) => group.minCount === 0 || group.addons.length >= group.minCount);
+    });
+
     const categories = state.menu.categories
       .filter((category) => category.isActive)
       .sort((left, right) => left.sortOrder - right.sortOrder)
@@ -364,7 +407,7 @@ function createStore(config) {
   }
 
   function validateAndResolveCartItem(payload) {
-    if (!payload || typeof payload !== "object") {
+    if (!isPlainObject(payload)) {
       throw httpError(400, "Request body must be a JSON object");
     }
 
@@ -385,7 +428,10 @@ function createStore(config) {
     }
 
     const size = state.menu.sizes.find(
-      (item) => item.productId === product.id && item.sizeCode === selectedSize
+      (item) =>
+        item.productId === product.id &&
+        item.sizeCode === selectedSize &&
+        item.isTemporarilyAvailable
     );
     if (!size) {
       throw httpError(400, "Invalid size");
@@ -403,7 +449,8 @@ function createStore(config) {
     }
 
     const productGroups = state.menu.addonGroups.filter(
-      (group) => group.ownerType === "product" && group.ownerId === product.id
+      (group) =>
+        group.ownerType === "product" && group.ownerId === product.id && group.isTemporarilyAvailable
     );
 
     const addonsById = new Map(
@@ -704,42 +751,115 @@ function createStore(config) {
   }
 
   function setAvailability(target, payload) {
-    if (!payload || typeof payload !== "object") {
+    if (!isPlainObject(payload)) {
       throw httpError(400, "Request body must be a JSON object");
     }
-    if (target === "product") {
-      if (!isNonEmptyString(payload.productId)) {
-        throw httpError(400, "productId is required");
+
+    if (!Object.prototype.hasOwnProperty.call(payload, "isTemporarilyAvailable")) {
+      throw httpError(400, "isTemporarilyAvailable is required");
+    }
+    const isTemporarilyAvailable = parseBoolean(
+      payload.isTemporarilyAvailable,
+      "isTemporarilyAvailable"
+    );
+
+    const targets = {
+      product: {
+        idField: "productId",
+        notFoundMessage: "Product not found",
+        collection: state.menu.products
+      },
+      size: {
+        idField: "sizeId",
+        notFoundMessage: "Size not found",
+        collection: state.menu.sizes
+      },
+      "addon-group": {
+        idField: "addonGroupId",
+        notFoundMessage: "Addon group not found",
+        collection: state.menu.addonGroups
+      },
+      addon: {
+        idField: "addonId",
+        notFoundMessage: "Addon not found",
+        collection: state.menu.addons
       }
-      const product = state.menu.products.find((entry) => entry.id === payload.productId);
-      if (!product) {
-        throw httpError(404, "Product not found");
+    };
+
+    const targetConfig = targets[target];
+    if (!targetConfig) {
+      throw httpError(404, "Unsupported availability target");
+    }
+
+    const supportedFields = new Set([targetConfig.idField, "isTemporarilyAvailable"]);
+    for (const key of Object.keys(payload)) {
+      if (!supportedFields.has(key)) {
+        throw httpError(400, `Unsupported availability field: ${key}`);
       }
-      product.isTemporarilyAvailable = Boolean(payload.isTemporarilyAvailable);
-      return {
-        type: "product",
+    }
+
+    const entityId = payload[targetConfig.idField];
+    if (!isNonEmptyString(entityId)) {
+      throw httpError(400, `${targetConfig.idField} is required`);
+    }
+
+    const entity = targetConfig.collection.find((entry) => entry.id === entityId.trim());
+    if (!entity) {
+      throw httpError(404, targetConfig.notFoundMessage);
+    }
+
+    entity.isTemporarilyAvailable = isTemporarilyAvailable;
+    touchMenuUpdatedAt();
+
+    return {
+      target,
+      id: entity.id,
+      isTemporarilyAvailable: entity.isTemporarilyAvailable,
+      updatedAt: state.menuUpdatedAt
+    };
+  }
+
+  function listAvailability(payload) {
+    if (payload !== undefined && !isPlainObject(payload)) {
+      throw httpError(400, "Request body must be a JSON object");
+    }
+    if (payload !== undefined && Object.keys(payload).length > 0) {
+      throw httpError(400, "Request body for availability list must be an empty JSON object");
+    }
+
+    return {
+      categories: state.menu.categories.map((category) => ({
+        id: category.id,
+        name: category.name,
+        sortOrder: category.sortOrder
+      })),
+      products: state.menu.products.map((product) => ({
         id: product.id,
+        categoryId: product.categoryId,
+        name: product.name,
         isTemporarilyAvailable: product.isTemporarilyAvailable
-      };
-    }
-
-    if (target === "addon") {
-      if (!isNonEmptyString(payload.addonId)) {
-        throw httpError(400, "addonId is required");
-      }
-      const addon = state.menu.addons.find((entry) => entry.id === payload.addonId);
-      if (!addon) {
-        throw httpError(404, "Addon not found");
-      }
-      addon.isTemporarilyAvailable = Boolean(payload.isTemporarilyAvailable);
-      return {
-        type: "addon",
+      })),
+      sizes: state.menu.sizes.map((size) => ({
+        id: size.id,
+        productId: size.productId,
+        name: size.sizeCode,
+        isTemporarilyAvailable: size.isTemporarilyAvailable
+      })),
+      addonGroups: state.menu.addonGroups.map((group) => ({
+        id: group.id,
+        ownerType: group.ownerType,
+        ownerId: group.ownerId,
+        name: group.name,
+        isTemporarilyAvailable: group.isTemporarilyAvailable
+      })),
+      addons: state.menu.addons.map((addon) => ({
         id: addon.id,
+        addonGroupId: addon.addonGroupId,
+        name: addon.name,
         isTemporarilyAvailable: addon.isTemporarilyAvailable
-      };
-    }
-
-    throw httpError(404, "Unsupported availability target");
+      })),
+      updatedAt: state.menuUpdatedAt
+    };
   }
 
   function asMenuSnapshot() {
@@ -753,7 +873,7 @@ function createStore(config) {
   }
 
   function upsertMenuCategory(payload) {
-    if (!payload || typeof payload !== "object") {
+    if (!isPlainObject(payload)) {
       throw httpError(400, "Request body must be a JSON object");
     }
     if (!isNonEmptyString(payload.name)) {
@@ -780,15 +900,17 @@ function createStore(config) {
 
     if (existingIndex >= 0) {
       state.menu.categories[existingIndex] = entity;
+      touchMenuUpdatedAt();
       return { target: "category", operation: "updated", entity };
     }
 
     state.menu.categories.push(entity);
+    touchMenuUpdatedAt();
     return { target: "category", operation: "created", entity };
   }
 
   function upsertMenuProduct(payload) {
-    if (!payload || typeof payload !== "object") {
+    if (!isPlainObject(payload)) {
       throw httpError(400, "Request body must be a JSON object");
     }
     if (!isNonEmptyString(payload.name)) {
@@ -829,15 +951,17 @@ function createStore(config) {
 
     if (existingIndex >= 0) {
       state.menu.products[existingIndex] = entity;
+      touchMenuUpdatedAt();
       return { target: "product", operation: "updated", entity };
     }
 
     state.menu.products.push(entity);
+    touchMenuUpdatedAt();
     return { target: "product", operation: "created", entity };
   }
 
   function upsertMenuSize(payload) {
-    if (!payload || typeof payload !== "object") {
+    if (!isPlainObject(payload)) {
       throw httpError(400, "Request body must be a JSON object");
     }
     if (!isNonEmptyString(payload.productId)) {
@@ -864,24 +988,31 @@ function createStore(config) {
 
     const id = resolveEntityId(payload.id, "size", state.menu.sizes);
     const existingIndex = state.menu.sizes.findIndex((item) => item.id === id);
+    const existing = existingIndex >= 0 ? state.menu.sizes[existingIndex] : null;
     const entity = {
       id,
       productId: payload.productId,
       sizeCode,
-      priceRub
+      priceRub,
+      isTemporarilyAvailable:
+        payload.isTemporarilyAvailable === undefined
+          ? existing?.isTemporarilyAvailable ?? true
+          : parseBoolean(payload.isTemporarilyAvailable, "isTemporarilyAvailable")
     };
 
     if (existingIndex >= 0) {
       state.menu.sizes[existingIndex] = entity;
+      touchMenuUpdatedAt();
       return { target: "size", operation: "updated", entity };
     }
 
     state.menu.sizes.push(entity);
+    touchMenuUpdatedAt();
     return { target: "size", operation: "created", entity };
   }
 
   function upsertMenuAddonGroup(payload) {
-    if (!payload || typeof payload !== "object") {
+    if (!isPlainObject(payload)) {
       throw httpError(400, "Request body must be a JSON object");
     }
     if (payload.ownerType !== "product") {
@@ -910,6 +1041,7 @@ function createStore(config) {
 
     const id = resolveEntityId(payload.id, "group", state.menu.addonGroups);
     const existingIndex = state.menu.addonGroups.findIndex((item) => item.id === id);
+    const existing = existingIndex >= 0 ? state.menu.addonGroups[existingIndex] : null;
     const entity = {
       id,
       ownerType: "product",
@@ -917,20 +1049,26 @@ function createStore(config) {
       name: payload.name.trim(),
       selectionRule: payload.selectionRule,
       minCount,
-      maxCount
+      maxCount,
+      isTemporarilyAvailable:
+        payload.isTemporarilyAvailable === undefined
+          ? existing?.isTemporarilyAvailable ?? true
+          : parseBoolean(payload.isTemporarilyAvailable, "isTemporarilyAvailable")
     };
 
     if (existingIndex >= 0) {
       state.menu.addonGroups[existingIndex] = entity;
+      touchMenuUpdatedAt();
       return { target: "addon-group", operation: "updated", entity };
     }
 
     state.menu.addonGroups.push(entity);
+    touchMenuUpdatedAt();
     return { target: "addon-group", operation: "created", entity };
   }
 
   function upsertMenuAddon(payload) {
-    if (!payload || typeof payload !== "object") {
+    if (!isPlainObject(payload)) {
       throw httpError(400, "Request body must be a JSON object");
     }
     if (!isNonEmptyString(payload.addonGroupId)) {
@@ -966,10 +1104,12 @@ function createStore(config) {
 
     if (existingIndex >= 0) {
       state.menu.addons[existingIndex] = entity;
+      touchMenuUpdatedAt();
       return { target: "addon", operation: "updated", entity };
     }
 
     state.menu.addons.push(entity);
+    touchMenuUpdatedAt();
     return { target: "addon", operation: "created", entity };
   }
 
@@ -1011,7 +1151,7 @@ function createStore(config) {
     if (target === "list") {
       return { target: "list", users: state.users.map((user) => toAdminUserView(user)) };
     }
-    if (!payload || typeof payload !== "object") {
+    if (!isPlainObject(payload)) {
       throw httpError(400, "Request body must be a JSON object");
     }
 
@@ -1052,7 +1192,7 @@ function createStore(config) {
     if (payload === undefined || payload === null) {
       return { settings: { ...state.settings } };
     }
-    if (typeof payload !== "object") {
+    if (!isPlainObject(payload)) {
       throw httpError(400, "Request body must be a JSON object");
     }
 
@@ -1112,6 +1252,7 @@ function createStore(config) {
     listCustomerOrders,
     listBackofficeOrders,
     transitionOrder,
+    listAvailability,
     setAvailability,
     adminMutateMenu,
     adminMutateUsers,

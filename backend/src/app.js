@@ -188,6 +188,13 @@ function createApp({ config = createConfigFromEnv(), store = createStore(config)
   );
 
   app.post(
+    "/backoffice/availability/list",
+    withActor("backoffice", (req, res) => {
+      res.json(store.listAvailability(req.body));
+    })
+  );
+
+  app.post(
     "/backoffice/availability/:target",
     withActor("backoffice", (req, res) => {
       res.json(store.setAvailability(req.params.target, req.body));
