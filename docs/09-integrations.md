@@ -135,6 +135,16 @@ Document every external system that matters to development, deploy, or e2e valid
 - QA fixtures: `tests/e2e/fixtures/*`
 - QA handoff contract: `docs/delivery/slice-a-qa-handoff.md`
 
+## Slice B QA Assets Path
+
+- QA assets workflow: `.github/workflows/slice-b-qa-assets-validation.yml`
+- QA entrypoint: `tests/e2e/run-slice-b.sh`
+- QA scenario runners:
+  - `tests/e2e/slice-a-api.e2e.mjs` (shared order-lifecycle baseline)
+  - `tests/e2e/slice-b-api.e2e.mjs` (availability and admin coverage)
+- QA fixtures: `tests/e2e/fixtures/*`
+- QA handoff contract: `docs/delivery/slice-b-qa-handoff.md`
+
 ## Slice A Deploy Path
 
 - Deploy workflow: `.github/workflows/slice-a-deploy.yml`

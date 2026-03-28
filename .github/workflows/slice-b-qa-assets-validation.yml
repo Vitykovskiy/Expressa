@@ -1,0 +1,77 @@
+name: Slice B QA Assets Validation
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  qa-slice-b-assets:
+    name: qa-slice-b-assets
+    runs-on: ubuntu-latest
+    env:
+      ADMIN_TELEGRAM_ID: "1"
+      DISABLE_TG_AUTH: "true"
+      BARISTA_TELEGRAM_ID: "2001"
+      CUSTOMER_TELEGRAM_ID: "3001"
+      SECONDARY_CUSTOMER_TELEGRAM_ID: "3002"
+      PORT: "18081"
+      BASE_URL: "http://127.0.0.1:18081"
+      E2E_STRICT: "true"
+      E2E_ENTRYPOINT: "tests/e2e/run-slice-b.sh"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+        working-directory: backend
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Start backend service
+        run: |
+          set -euo pipefail
+          node backend/src/server.js > /tmp/expressa-backend.log 2>&1 &
+          echo $! > /tmp/expressa-backend.pid
+
+      - name: Wait for backend health
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            if curl -fsS "${BASE_URL}/healthz" >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Backend did not become healthy in time"
+          cat /tmp/expressa-backend.log || true
+          exit 1
+
+      - name: Run Slice B QA assets
+        run: |
+          set -euo pipefail
+          chmod +x infra/validation/run-e2e.sh
+          chmod +x tests/e2e/run-slice-b.sh
+          bash infra/validation/run-e2e.sh
+
+      - name: Stop backend service
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -f /tmp/expressa-backend.pid ]; then
+            kill "$(cat /tmp/expressa-backend.pid)" || true
+          fi
