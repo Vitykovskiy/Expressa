@@ -3,13 +3,14 @@
 ## Task
 
 - Blocked issue: `#14`
-- Follow-up analysis: `#21`
+- Follow-up analysis: `#21`, `#22`
 - Scope: backoffice tabs and role UX for barista and administrator
 
 ## Status
 
 - Analysis issue `#21`: `resolved`
-- Remaining blocker: none
+- Analysis issue `#22`: `open`
+- Remaining blocker: missing barista-capable availability read contract
 
 ## Resolved By #21
 
@@ -56,3 +57,31 @@ The canonical mapping is now sufficient for orders, availability, menu, users, s
 ## Required Unblock Output
 
 Unblock output is complete. No further external input is required for `#14` from issue `#21`.
+
+## New Blocker Discovered During Frontend Execution
+
+### Date
+
+- 2026-03-28
+
+### Summary
+
+Frontend execution for `#14` is blocked again by a contract gap in the availability flow for barista users.
+
+### Verified Finding
+
+- `Availability` must be visible to both `barista` and `administrator` per `docs/analysis/ui-specification.md`.
+- The approved API set exposes write-only availability mutations through `POST /backoffice/availability/*`.
+- The only menu read-model that includes inactive or temporarily unavailable entities is `POST /admin/menu/list`.
+- `POST /admin/menu/list` is administrator-only in the implemented backend contract, so a barista cannot load the full availability dataset required to disable and re-enable products or addons.
+- `GET /customer/menu` is not a valid fallback because it omits unavailable items and therefore cannot support re-enabling them from the backoffice availability screen.
+
+### Delivery Impact
+
+- Frontend cannot implement the barista `Availability` tab without inventing an undocumented read contract or shipping a broken partial flow.
+- `#14` must remain blocked until system analysis and backend contract ownership define a barista-capable availability read path or explicitly change the role scope.
+
+### Required Follow-Up
+
+- Linked follow-up `system_analysis` issue: `#22`.
+- Keep `#14` in `Blocked` until that follow-up is resolved in canonical docs and implemented by the owning contour if needed.
