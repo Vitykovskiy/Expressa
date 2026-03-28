@@ -42,12 +42,14 @@ This document is the devops handoff for implementation issue `#15`.
 3. shell syntax validation for runtime/validation scripts
 4. compose rendering validation for Slice B runtime manifest
 5. local runtime up/down with frontend smoke execution
+6. on `main` pushes, build and publish `slice-b-latest` backend and frontend images to GHCR
 
 ## Operational Notes
 
 - The validation workflow uses `traefik/whoami` as a backend stand-in to verify frontend routing and proxy wiring in CI.
 - Production deployment must pass actual backend and frontend image references to `deploy-slice-b-runtime.sh`.
 - Test environment deployment may omit image refs to use the default `slice-b-latest` tags.
+- `deploy-slice-b-runtime.sh` accepts optional backend/frontend image arguments and defaults to test tags when `DISABLE_TG_AUTH=true`.
 - When issue `#16` delivers executable e2e assets, set `E2E_STRICT=true` in the calling context so missing assets fail the pipeline.
 
 ## Test-Env Artifact Policy
