@@ -91,6 +91,7 @@ Backoffice file base:
 
 - Follow-up analysis issue `#19` resolves the customer-flow clarification gate.
 - Remaining delivery dependency is implementation of the cart mutation contract by backend follow-up issue `#20`.
+- Frontend issue `#14` discovered that the mapped backoffice links `node-id=2-560`, `2-566`, `2-572`, and `2-580` resolve to navigation-link nodes rather than full tab screens. Follow-up issue `#21` owns corrected backoffice frame mapping before frontend implementation resumes.
 
 ## Accessibility / UX Notes
 
