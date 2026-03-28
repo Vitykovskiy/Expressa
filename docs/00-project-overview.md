@@ -33,7 +33,7 @@ See `AGENTS.md` for routing and `docs/07-workflow.md` for the canonical workflow
 - Active initiative: `#1 [Initiative] Стартовая delivery-цепочка и baseline-спецификация Expressa`
 - Active issue signal: `#11 [Block Delivery] Slice B frontend customer/backoffice integration`
 - Current owner role: `system-analyst`
-- Delivery status: `Slice A complete; #20 is done; #21 confirmed responsive backoffice mappings but remains blocked by missing dedicated menu-tab design input; frontend issue #14 stays blocked`
+- Delivery status: `Slice A complete; #20 is done; #21 now includes the mobile menu frame but remains blocked by missing desktop menu design input and menu-state coverage; frontend issue #14 stays blocked`
 
 ## Canonical Artifact Map
 
