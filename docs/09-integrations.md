@@ -89,7 +89,9 @@ Document every external system that matters to development, deploy, or e2e valid
 
 - Baseline workflow: `.github/workflows/stage0-infrastructure.yml`
 - Baseline runtime contract: `docs/delivery/stage0-infrastructure-baseline.md`
-- Latest evidence: `https://github.com/Vitykovskiy/expressa/actions/runs/23677665147`
+- Evidence runs:
+  - `https://github.com/Vitykovskiy/expressa/actions/runs/23677665147`
+  - `https://github.com/Vitykovskiy/expressa/actions/runs/23677699654`
 - Result: `ci-baseline` and `deploy-staging` passed; VPS health-check endpoint returned HTTP 200
 
 ## Setup Notes
