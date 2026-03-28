@@ -1,0 +1,78 @@
+name: Slice B Frontend Validation Path
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  ci-slice-b-frontend:
+    name: ci-slice-b-frontend
+    runs-on: ubuntu-latest
+    env:
+      BACKEND_IMAGE: traefik/whoami:v1.10.1
+      FRONTEND_IMAGE: expressa-frontend:ci
+      POSTGRES_PASSWORD: sliceb_ci_password
+      ADMIN_TELEGRAM_ID: "1"
+      DISABLE_TG_AUTH: "true"
+      BACKEND_PORT: "18081"
+      FRONTEND_PORT: "18082"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run frontend tests
+        working-directory: frontend
+        run: npm test
+
+      - name: Build frontend bundle
+        working-directory: frontend
+        run: npm run build
+
+      - name: Build frontend container image
+        run: |
+          set -euo pipefail
+          docker build -t "${FRONTEND_IMAGE}" -f frontend/Dockerfile frontend
+
+      - name: Validate scripts syntax
+        run: |
+          set -euo pipefail
+          bash -n infra/vps/deploy-slice-b-runtime.sh
+          bash -n infra/validation/run-smoke.sh
+          bash -n infra/validation/run-frontend-smoke.sh
+          bash -n infra/validation/run-e2e.sh
+
+      - name: Validate Slice B compose
+        run: |
+          set -euo pipefail
+          docker compose -f infra/staging/docker-compose.slice-b.yml config >/dev/null
+
+      - name: Start local slice-b runtime path
+        run: |
+          set -euo pipefail
+          docker compose -f infra/staging/docker-compose.slice-b.yml up -d
+
+      - name: Run frontend smoke entrypoint
+        run: |
+          set -euo pipefail
+          chmod +x infra/validation/run-frontend-smoke.sh
+          infra/validation/run-frontend-smoke.sh "http://127.0.0.1:${FRONTEND_PORT}"
+
+      - name: Stop local slice-b runtime path
+        if: always()
+        run: |
+          set -euo pipefail
+          docker compose -f infra/staging/docker-compose.slice-b.yml down -v

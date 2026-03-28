@@ -107,6 +107,17 @@ Document every external system that matters to development, deploy, or e2e valid
 - Validation entrypoints: `infra/validation/run-smoke.sh`, `infra/validation/run-e2e.sh`
 - CI runtime image for path validation: `traefik/whoami:v1.10.1` (temporary contract image before backend artifact publication)
 
+## Slice B Frontend Validation Path
+
+- Validation workflow: `.github/workflows/slice-b-frontend-validation.yml`
+- Runtime contract: `docs/delivery/slice-b-runtime-validation-path.md`
+- Runtime manifest: `infra/staging/docker-compose.slice-b.yml`
+- Deployment script: `infra/vps/deploy-slice-b-runtime.sh`
+- Frontend runtime image definition: `frontend/Dockerfile`
+- Frontend proxy config: `frontend/nginx.conf`
+- Validation entrypoints: `infra/validation/run-frontend-smoke.sh`, `infra/validation/run-e2e.sh`
+- CI backend image for path validation: `traefik/whoami:v1.10.1` (temporary contract image before backend artifact publication)
+
 ## Slice A Backend Implementation Path
 
 - Service sources: `backend/src/*`
