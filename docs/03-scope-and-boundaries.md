@@ -9,7 +9,7 @@ This document captures intake-level version boundaries and feeds the analysis pa
 - Unified backoffice web interface for baristas and administrators.
 - Separate Telegram bot for backoffice access.
 - Administrator-driven user blocking.
-- Catalog with drink sizes, addon groups, free addons, and mutually exclusive options.
+- Catalog with drink sizes, inherited additional-option groups, free additional options, and mutually exclusive options inside a group.
 - Current-day pickup slots only.
 - Customer order history.
 - Barista reminders.
@@ -21,16 +21,18 @@ This document captures intake-level version boundaries and feeds the analysis pa
 - In-app payment and online payments.
 - Promotions, discounts, loyalty, coupons, or bonus mechanics.
 - Pickup-slot horizons beyond the current day.
-- Free-form modifiers outside the explicit addon-group model.
+- Free-form modifiers outside the explicit additional-option-group model.
 - Advanced reporting and analytical dashboards.
 - Advanced inventory constraints beyond simple item availability.
+- Customer order cancellation after submission.
+- Production deployment.
 
 ## First Version Constraints
 
 - Timeline constraints: deliver an MVP-focused v1 with hard scope boundaries.
 - Budget constraints: not defined in the intake package.
 - Team constraints: barista and administrator share a single backoffice surface with role restrictions instead of separate products.
-- Data or integration constraints: Telegram is mandatory for access and identity; backend must use NestJS; frontend must use Vue 3 and Vuetify; slot step is 10 minutes; default operating hours are `09:00-20:00`; default slot capacity is 5; currency is RUB with integer rounding.
+- Data or integration constraints: Telegram is mandatory for access and identity; backend must use NestJS; customer and backoffice frontends must use Vue 3 and Vuetify; slot step is 10 minutes; default operating hours are `09:00-20:00`; default slot capacity is 5; currency is RUB with integer rounding.
 
 ## Deferred Scope
 
@@ -39,6 +41,7 @@ This document captures intake-level version boundaries and feeds the analysis pa
 - Multi-day slot booking.
 - Expanded inventory management and stock-aware reservation rules.
 - Extended analytics and reporting.
+- Production rollout concerns beyond the test VPS stream.
 
 ## Boundary Notes
 
